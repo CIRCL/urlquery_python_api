@@ -41,17 +41,17 @@ from dateutil.parser import parse
 from datetime import datetime, timedelta
 import time
 
-import constraints as c
+from . import constraints as c
 if c.has_private_key:
     try:
-        from api_key import key
+        from .api_key import key
     except:
         c.has_private_key = False
 
 
 __intervals = ['hour', 'day']
 __query_types = ['string', 'regexp']
-__confidences = range(3)
+__confidences = list(range(3))
 
 def __set_default_values(gzip = False):
     to_return = {}
