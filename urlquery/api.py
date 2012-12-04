@@ -49,9 +49,9 @@ if c.has_private_key:
         c.has_private_key = False
 
 
-intervals = ['hour', 'day']
-query_types = ['string', 'regexp']
-confidences = range(3)
+__intervals = ['hour', 'day']
+__query_types = ['string', 'regexp']
+__confidences = range(3)
 
 def __set_default_values(gzip = False):
     to_return = {}
@@ -87,8 +87,8 @@ def urlfeed_get(interval = 'hour', timestamp = None, gzip = False):
 
     """
     query = {'method': 'urlfeed_get'}
-    if interval not in intervals:
-        return {'error': 'interval can only be in ' + ', '.join(intervals)}
+    if interval not in __intervals:
+        return {'error': 'interval can only be in ' + ', '.join(__intervals)}
     if timestamp is None:
         timestamp = time.mktime(datetime.now().utctimetuple())
     else:
@@ -130,8 +130,8 @@ def urlquery_search(q, urlquery_type = 'string', urlquery_from = None,
         urlquery_from = urlquery_to - timedelta(days=30)
     else:
         urlquery_from = parse(urlquery_from)
-    if urlquery_type not in query_types:
-        return {'error': 'urlquery_type can only be in ' + ', '.join(query_types)}
+    if urlquery_type not in __query_types:
+        return {'error': 'urlquery_type can only be in ' + ', '.join(__query_types)}
     query['type'] = urlquery_type
     query['from'] = time.mktime(urlquery_from.utctimetuple())
     query['to'] = time.mktime(urlquery_to.utctimetuple())
@@ -208,7 +208,7 @@ def urlquery_get_report(urlquery_id, flag = 0 , recent_limit = 6, gzip = False):
     query['recent_limit']= recent_limit
     return __query(query, gzip)
 
-def urlquery_get_url_reputation_list(interval = 'hour', timestamp = None,
+def urlquery_get_flagged_urls(interval = 'hour', timestamp = None,
         confidence = 2, gzip = False):
     """
         Get the URL list with a reputation.
@@ -235,11 +235,11 @@ def urlquery_get_url_reputation_list(interval = 'hour', timestamp = None,
                 * 2 - when suspicious URL patterns or alerts are detected
                 * 3 - generally means a live exploit kit was detected
     """
-    query = {'method': 'urlquery_get_url_reputation_list'}
-    if interval not in intervals:
-        return {'error': 'interval can only be in ' + ', '.join(intervals)}
-    if confidence not in confidences:
-        return {'error': 'confidence can only be in ' + ', '.join(confidences)}
+    query = {'method': 'urlquery_get_flagged_urls'}
+    if interval not in __intervals:
+        return {'error': 'interval can only be in ' + ', '.join(__intervals)}
+    if confidence not in __confidences:
+        return {'error': 'confidence can only be in ' + ', '.join(__confidences)}
     if timestamp is None:
         timestamp = time.mktime(datetime.now().utctimetuple())
     query['interval'] = interval
