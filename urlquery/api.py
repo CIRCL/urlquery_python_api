@@ -64,7 +64,7 @@ def __set_default_values(gzip = False):
 def __query(query, gzip = False):
     query.update(__set_default_values(gzip))
     r = requests.post(c.base_url, data=json.dumps(query))
-    return r.json
+    return r.json()
 
 def urlfeed_get(interval = 'hour', timestamp = None, gzip = False):
     """
