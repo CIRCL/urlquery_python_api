@@ -2,7 +2,7 @@
 Readme
 ======
 
-API to access urlquery.
+API to access [urlquery](http://urlquery.net/index.php).
 
 Dependencies
 ------------
