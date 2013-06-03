@@ -50,8 +50,7 @@ if c.has_private_key:
 
 
 __intervals = ['hour', 'day']
-__query_types = ['string', 'regexp']
-__confidences = list(range(3))
+__query_types = ['string', 'regexp', 'urlquery_alert', 'ids_alert']
 
 def __set_default_values(gzip = False):
     to_return = {}
@@ -76,10 +75,15 @@ def urlfeed_get(interval = 'hour', timestamp = None, gzip = False):
 
                     Allowed values:
 
-                        * hour -- (recommended) splits the day into 24 slices Which each goes from 00-59 of every hour, for example: 10:00-10:59.
-                        * day -- will return all URLs from a given date.
+                        * hour - (recommended) splits the day into 24
+                                  slices Which each goes from 00-59 of
+                                  every hour, for example: 10:00-10:59.
+                        * day - will return all URLs from a given date.
 
-            :param timestamp: Beginning of the interval (default: now)
+            :param timestamp: This selects which slice to return.
+                              Any timestamp within a given interval/time
+                              slice can be used to return URLs from that
+                              timeframe. (default: now)
 
                 .. hint::
 
@@ -87,15 +91,17 @@ def urlfeed_get(interval = 'hour', timestamp = None, gzip = False):
 
     """
     query = {'method': 'urlfeed_get'}
+    if not c.has_private_key:
+        return query.update({'error': 'Private key required.'})
     if interval not in __intervals:
-        return {'error': 'interval can only be in ' + ', '.join(__intervals)}
+        return query.update({'error': 'Interval can only be in ' + ', '.join(__intervals)})
     if timestamp is None:
         timestamp = time.mktime(datetime.now().utctimetuple())
     else:
         try:
             timestamp = time.mktime(parse(timestamp).utctimetuple())
         except:
-            return {'error': 'Unable to convert time to timestamp: ' + str(time)}
+            return query.update({'error': 'Unable to convert time to timestamp: ' + str(time)})
     query['timestamp'] = timestamp
     query['interval'] = interval
     return __query(query, gzip)
@@ -112,8 +118,10 @@ def urlquery_search(q, urlquery_type = 'string', urlquery_from = None,
 
                 Allowed values:
 
-                    * string -- (recomended) Example: "91.229.143.59"
-                    * regex -- Example:  "\.php\?.{1,7}=[a-f0-9]{16}$"
+                    * string - (recomended) Example: "91.229.143.59"
+                    * regex - Example:  "\.php\?.{1,7}=[a-f0-9]{16}$"
+                    * urlquery_alert
+                    * ids_alert
 
                         .. warning::
                             Please use moderation when searching with regexp.
@@ -122,6 +130,8 @@ def urlquery_search(q, urlquery_type = 'string', urlquery_from = None,
         :param urlquery_to: Last date of the interval (default: now)
     """
     query = {'method': 'urlquery_search'}
+    if urlquery_type not in __query_types:
+        return query.update({'error': 'urlquery_type can only be in ' + ', '.join(__query_types)})
     if urlquery_to is None:
         urlquery_to = datetime.now()
     else:
@@ -130,15 +140,13 @@ def urlquery_search(q, urlquery_type = 'string', urlquery_from = None,
         urlquery_from = urlquery_to - timedelta(days=30)
     else:
         urlquery_from = parse(urlquery_from)
-    if urlquery_type not in __query_types:
-        return {'error': 'urlquery_type can only be in ' + ', '.join(__query_types)}
     query['type'] = urlquery_type
     query['from'] = time.mktime(urlquery_from.utctimetuple())
     query['to'] = time.mktime(urlquery_to.utctimetuple())
     query['q'] = q
     return __query(query, gzip)
 
-def urlquery_submit(url, ua = None, referer = None, flags = None):
+def urlquery_submit(url, ua = None, referer = None, flags = None, priority = None):
     """
         Submits an URL for analysis.
 
@@ -172,13 +180,50 @@ def urlquery_submit(url, ua = None, referer = None, flags = None):
                 .. tip::
                     If both non-public and private bit is set, the report will be set to private.
 
+        :param priority: Set a priority on the submission.
+
+            .. note::
+
+                * 0 - urlfeed: URL might take several hour before completing
+                * 1 - Low: Used for mass submission through the API
+                * 2 - Normal
+                * 3 - High
+
 
     """
     query = {'method': 'urlquery_submit'}
+    if flags > 7:
+        return query.update({'error': 'flags must be <= 7'})
+    if priority not in list(range(4)):
+        return query.update({'error': 'priority must be in ' + ', '.join(list(range(4)))})
     query['url'] = url
     query['ua'] = ua
     query['referer'] = referer
     query['flags'] = flags
+    query['priority'] = priority
+    return __query(query)
+
+def urlquery_get_queue_status(queue_id):
+    """
+        Returns status (int) of the queued item along with other misc info.
+        The final report id of the report will be returned once the report
+        is finished (status = 3).
+        To get the report see ‘urlquery_get_report’
+
+        :param queue_id: Queue ID returned from ‘urlquery_submit’
+
+        .. note::
+
+            The return status will be one of the following:
+
+                * 0 - Queued
+                * 1 - Processing
+                * 2 - Analyzing
+                * 3 - Done
+
+    """
+    query = {'method': 'urlquery_get_queue_status'}
+    query['queue_id'] = queue_id
     return __query(query)
 
 def urlquery_get_report(urlquery_id, flag = 0 , recent_limit = 6, gzip = False):
@@ -190,19 +235,22 @@ def urlquery_get_report(urlquery_id, flag = 0 , recent_limit = 6, gzip = False):
 
             .. note::
 
-                * 0 - Basic report
+                * (default) 0 - Basic report
                 * 1 - Include settings
                 * 2 - Alerts (IDS and urlQuery Alerts)
                 * 4 - Include recent report from same domain/IP/ASN.
                 * 8 - Include report details (JavaScripts, HTTP Transactions etc.)
 
-                The above values are added together to form a final value. To get all report data back use 15.
+                The above values are added together to form a final value.
+                To get all report data back use 15.
 
-        :param recent_limit: Number of reports from same ASN / IP / domain to include. Only basic info, regardless of flags
+        :param recent_limit: Number of reports from same ASN / IP /
+                             domain to include. Only basic info, regardless
+                             of flags. Default: 6.
     """
     query = {'method': 'urlquery_get_report'}
     if flag > 15:
-        return {'error': 'flag can only be <= 15'}
+        return query.update({'error': 'flag must be <= 15'})
     query['urlquery_id'] = urlquery_id
     query['flag'] = flag
     query['recent_limit']= recent_limit
@@ -219,29 +267,43 @@ def urlquery_get_flagged_urls(interval = 'hour', timestamp = None,
 
                 Allowed values:
 
-                    * hour -- (recommended) splits the day into 24 slices Which each goes from 00-59 of every hour, for example: 10:00-10:59.
-                    * day -- will return all URLs from a given date.
+                    * hour - (recommended) splits the day into 24 slices
+                             Which each goes from 00-59 of every hour,
+                             for example: 10:00-10:59.
+                    * day - will return all URLs from a given date.
 
-        :param timestamp: Beginning of the interval (default: now)
+        :param timestamp: This selects which slice to return.
+                          Any timestamp within a given interval/time
+                          slice can be used to return URLs from that
+                          timeframe. (default: now)
 
             .. hint::
                 "20120714 17:30" returns the feed between 17:00 and 17:59 the 2012-07-14
 
-        :param confidence: Return URLs based on confidence level. Each URL is given a confidence level between 1-3 where 3 is the highest.
+        :param confidence: Return URLs based on confidence level. Each
+                           URL is given a confidence level between 1-3
+                           where 3 is the highest.
 
             .. note::
 
-                * 1 - lowest, when IDS alerts triggers
+                * 1 - lowest, when IDS alerts triggers, return all URLs.
                 * 2 - when suspicious URL patterns or alerts are detected
                 * 3 - generally means a live exploit kit was detected
     """
     query = {'method': 'urlquery_get_flagged_urls'}
+    if not c.has_private_key:
+        return query.update({'error': 'Private key required.'})
     if interval not in __intervals:
-        return {'error': 'interval can only be in ' + ', '.join(__intervals)}
-    if confidence not in __confidences:
-        return {'error': 'confidence can only be in ' + ', '.join(__confidences)}
+        return query.update({'error': 'interval can only be in ' + ', '.join(__intervals)})
+    if confidence not in [1,2,3]:
+        return query.update({'error': 'confidence can only be in ' + ', '.join([1,2,3])})
     if timestamp is None:
         timestamp = time.mktime(datetime.now().utctimetuple())
+    else:
+        try:
+            timestamp = time.mktime(parse(timestamp).utctimetuple())
+        except:
+            return query.update({'error': 'Unable to convert time to timestamp: ' + str(time)})
     query['interval'] = interval
     query['timestamp'] = timestamp
     query['confidence'] = confidence
