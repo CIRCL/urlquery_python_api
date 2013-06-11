@@ -61,6 +61,8 @@ def __set_default_values(gzip = False):
     return to_return
 
 def __query(query, gzip = False):
+    if query.get('error') is not None:
+        return query
     query.update(__set_default_values(gzip))
     r = requests.post(c.base_url, data=json.dumps(query))
     return r.json()
@@ -92,16 +94,16 @@ def urlfeed_get(interval = 'hour', timestamp = None, gzip = False):
     """
     query = {'method': 'urlfeed_get'}
     if not c.has_private_key:
-        return query.update({'error': 'Private key required.'})
+        query.update({'error': 'Private key required.'})
     if interval not in __intervals:
-        return query.update({'error': 'Interval can only be in ' + ', '.join(__intervals)})
+        query.update({'error': 'Interval can only be in ' + ', '.join(__intervals)})
     if timestamp is None:
         timestamp = time.mktime(datetime.now().utctimetuple())
     else:
         try:
             timestamp = time.mktime(parse(timestamp).utctimetuple())
         except:
-            return query.update({'error': 'Unable to convert time to timestamp: ' + str(time)})
+            query.update({'error': 'Unable to convert time to timestamp: ' + str(time)})
     query['timestamp'] = timestamp
     query['interval'] = interval
     return __query(query, gzip)
@@ -131,7 +133,7 @@ def urlquery_search(q, urlquery_type = 'string', urlquery_from = None,
     """
     query = {'method': 'urlquery_search'}
     if urlquery_type not in __query_types:
-        return query.update({'error': 'urlquery_type can only be in ' + ', '.join(__query_types)})
+        query.update({'error': 'urlquery_type can only be in ' + ', '.join(__query_types)})
     if urlquery_to is None:
         urlquery_to = datetime.now()
     else:
@@ -146,7 +148,7 @@ def urlquery_search(q, urlquery_type = 'string', urlquery_from = None,
     query['q'] = q
     return __query(query, gzip)
 
-def urlquery_submit(url, ua = None, referer = None, flags = None, priority = None):
+def urlquery_submit(url, ua = None, referer = None, flags = None, priority = 2):
     """
         Submits an URL for analysis.
 
@@ -193,9 +195,10 @@ def urlquery_submit(url, ua = None, referer = None, flags = None, priority = Non
     """
     query = {'method': 'urlquery_submit'}
     if flags > 7:
-        return query.update({'error': 'flags must be <= 7'})
+        query.update({'error': 'flags must be <= 7'})
     if priority not in list(range(4)):
-        return query.update({'error': 'priority must be in ' + ', '.join(list(range(4)))})
+        query.update({'error': 'priority must be in '
+            + ', '.join(list(map(str, range(4))))})
     query['url'] = url
     query['ua'] = ua
     query['referer'] = referer
@@ -250,7 +253,7 @@ def urlquery_get_report(urlquery_id, flag = 0 , recent_limit = 6, gzip = False):
     """
     query = {'method': 'urlquery_get_report'}
     if flag > 15:
-        return query.update({'error': 'flag must be <= 15'})
+        query.update({'error': 'flag must be <= 15'})
     query['urlquery_id'] = urlquery_id
     query['flag'] = flag
     query['recent_limit']= recent_limit
@@ -292,18 +295,18 @@ def urlquery_get_flagged_urls(interval = 'hour', timestamp = None,
     """
     query = {'method': 'urlquery_get_flagged_urls'}
     if not c.has_private_key:
-        return query.update({'error': 'Private key required.'})
+        query.update({'error': 'Private key required.'})
     if interval not in __intervals:
-        return query.update({'error': 'interval can only be in ' + ', '.join(__intervals)})
+        query.update({'error': 'interval can only be in ' + ', '.join(__intervals)})
     if confidence not in [1,2,3]:
-        return query.update({'error': 'confidence can only be in ' + ', '.join([1,2,3])})
+        query.update({'error': 'confidence can only be in ' + ', '.join([1,2,3])})
     if timestamp is None:
         timestamp = time.mktime(datetime.now().utctimetuple())
     else:
         try:
             timestamp = time.mktime(parse(timestamp).utctimetuple())
         except:
-            return query.update({'error': 'Unable to convert time to timestamp: ' + str(time)})
+            query.update({'error': 'Unable to convert time to timestamp: ' + str(time)})
     query['interval'] = interval
     query['timestamp'] = timestamp
     query['confidence'] = confidence
