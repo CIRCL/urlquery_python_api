@@ -98,7 +98,10 @@ def urlfeed_get(interval = 'hour', timestamp = None, gzip = False):
     if interval not in __intervals:
         query.update({'error': 'Interval can only be in ' + ', '.join(__intervals)})
     if timestamp is None:
-        timestamp = time.mktime(datetime.now().utctimetuple())
+        ts = datetime.now()
+        if interval == 'hour':
+            ts = ts - timedelta(hours=1)
+        timestamp = time.mktime(ts.utctimetuple())
     else:
         try:
             timestamp = time.mktime(parse(timestamp).utctimetuple())
