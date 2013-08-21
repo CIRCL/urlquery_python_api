@@ -140,11 +140,13 @@ def urlquery_search(q, urlquery_type = 'string', urlquery_from = None,
     if urlquery_to is None:
         urlquery_to = datetime.now()
     else:
-        urlquery_to = parse(urlquery_to)
+        if type(urlquery_to) == type(str()):
+            urlquery_to = parse(urlquery_to)
     if urlquery_from is None:
         urlquery_from = urlquery_to - timedelta(days=30)
     else:
-        urlquery_from = parse(urlquery_from)
+        if type(urlquery_to) == type(str()):
+            urlquery_from = parse(urlquery_from)
     query['type'] = urlquery_type
     query['from'] = time.mktime(urlquery_from.utctimetuple())
     query['to'] = time.mktime(urlquery_to.utctimetuple())
