@@ -98,7 +98,10 @@ def urlfeed_get(interval = 'hour', timestamp = None, gzip = False):
     if interval not in __intervals:
         query.update({'error': 'Interval can only be in ' + ', '.join(__intervals)})
     if timestamp is None:
-        timestamp = time.mktime(datetime.now().utctimetuple())
+        ts = datetime.now()
+        if interval == 'hour':
+            ts = ts - timedelta(hours=1)
+        timestamp = time.mktime(ts.utctimetuple())
     else:
         try:
             timestamp = time.mktime(parse(timestamp).utctimetuple())
@@ -137,11 +140,13 @@ def urlquery_search(q, urlquery_type = 'string', urlquery_from = None,
     if urlquery_to is None:
         urlquery_to = datetime.now()
     else:
-        urlquery_to = parse(urlquery_to)
+        if type(urlquery_to) == type(str()):
+            urlquery_to = parse(urlquery_to)
     if urlquery_from is None:
         urlquery_from = urlquery_to - timedelta(days=30)
     else:
-        urlquery_from = parse(urlquery_from)
+        if type(urlquery_to) == type(str()):
+            urlquery_from = parse(urlquery_from)
     query['type'] = urlquery_type
     query['from'] = time.mktime(urlquery_from.utctimetuple())
     query['to'] = time.mktime(urlquery_to.utctimetuple())
@@ -200,9 +205,12 @@ def urlquery_submit(url, ua = None, referer = None, flags = None, priority = 2):
         query.update({'error': 'priority must be in '
             + ', '.join(list(map(str, range(4))))})
     query['url'] = url
-    query['ua'] = ua
-    query['referer'] = referer
-    query['flags'] = flags
+    if ua is not None:
+        query['ua'] = ua
+    if referer is not None:
+        query['referer'] = referer
+    if flags is not None:
+        query['flags'] = flags
     query['priority'] = priority
     return __query(query)
 
@@ -254,7 +262,7 @@ def urlquery_get_report(urlquery_id, flag = 0 , recent_limit = 6, gzip = False):
     query = {'method': 'urlquery_get_report'}
     if flag > 15:
         query.update({'error': 'flag must be <= 15'})
-    query['urlquery_id'] = urlquery_id
+    query['id'] = urlquery_id
     query['flag'] = flag
     query['recent_limit']= recent_limit
     return __query(query, gzip)
@@ -301,7 +309,10 @@ def urlquery_get_flagged_urls(interval = 'hour', timestamp = None,
     if confidence not in [1,2,3]:
         query.update({'error': 'confidence can only be in ' + ', '.join([1,2,3])})
     if timestamp is None:
-        timestamp = time.mktime(datetime.now().utctimetuple())
+        ts = datetime.now()
+        if interval == 'hour':
+            ts = ts - timedelta(hours=1)
+        timestamp = time.mktime(ts.utctimetuple())
     else:
         try:
             timestamp = time.mktime(parse(timestamp).utctimetuple())
