@@ -19,7 +19,7 @@ smtp_server = 'smtp_server'
 def get_country():
     feed = urlquery.urlfeed_get()
     entries = []
-    for k, v in feed.iteritems():
+    for v in feed:
         if type(v) != type({}) or v.get('url') is None:
             continue
         if v.get('country') == c or re.findall(regex_url, v['url']):
