@@ -10,59 +10,52 @@ from email.mime.text import MIMEText
 import time
 import datetime
 
-regex_url = '.*(\.lu[$/]).*'
 c = 'Luxembourg'
+cc = 'LU'
+tld = 'lu'
 sender = 'urlquery@example.com'
 to = 'dest@example.com'
 smtp_server = 'smtp_server'
 
 def get_country():
-    feed = urlquery.urlfeed_get()
+    feed = urlquery.urlfeed()
     entries = []
-    for v in feed:
-        if type(v) != type({}) or v.get('url') is None:
+    for url in feed.get('feed'):
+        if type(url) != type({}):
             continue
-        if v.get('country') == c or re.findall(regex_url, v['url']):
-            entries.append(v)
+        if url.get('tld') == tld or url.get('ip').get('cc') == cc
+            or url.get('ip').get('country') == c:
+            entries.append(url)
     return entries
 
 def prepare_mail(entry):
     to_return = {}
-    to_return['subject'] = 'UrlQuery report for {}'.format(entry['ip'])
+    to_return['subject'] = \
+        'UrlQuery report for {}'.format(entry.get('ip').get('addr'))
     to_return['body'] = json.dumps(entry, sort_keys=True, indent=4)
-    reports = urlquery.urlquery_search(entry['ip'],
-            urlquery_from = datetime.datetime.now() - datetime.timedelta(hours=2))
+    reports = urlquery.search(entry.get('ip').get('addr'),
+            urlquery_from = datetime.datetime.now() - datetime.timedelta(hours=1))
+    # FIXME: the output of a search is undefined
     if reports is None:
-        response = urlquery.urlquery_submit(entry['url'])
+        response = urlquery.submit(entry['url'])
         queue_id = response.get('queue_id')
+        report_id = response.get('report_id')
         i = 0
-        while queue_id is None:
-            time.sleep(10)
-            response = urlquery.urlquery_submit(entry['url'])
-            queue_id = response.get('queue_id')
+        while report_id is None:
+            print 'Waiting for', entry.get('url').get('addr')
+            time.sleep(30)
+            response = urlquery.queue_status(queue_id)
+            report_id = response.get('report_id')
             i += 1
-            if i >= 3:
+            if i >= 5:
                 return to_return
-        time.sleep(10)
-        status = urlquery.urlquery_get_queue_status(queue_id)
-        i = 0
-        while status.get('status') is None:
-            i += 1
-            time.sleep(10)
-            status = urlquery.urlquery_get_queue_status(queue_id)
-            if i >= 10:
-                return to_return
-        while int(status['status']) != 3:
-            print 'Waiting for', entry['url']
-            time.sleep(10)
-            status = urlquery.urlquery_get_queue_status(queue_id)
-        full_report = urlquery.urlquery_get_report(status['report_id'], flag=11)
+        full_report = urlquery.report(status['report_id'], include_details=True)
         to_return['body'] += '\n' + json.dumps(full_report,
                 sort_keys=True, indent=4)
     else:
         for report in reports:
             try:
-                full_report = urlquery.urlquery_get_report(report['id'], flag=11)
+                full_report = urlquery.report(report['id'], include_details=True)
                 to_return['body'] += '\n' + json.dumps(full_report,
                         sort_keys=True, indent=4)
             except:
@@ -87,14 +80,14 @@ if __name__ == '__main__':
             ips = []
 
             for e in entries:
-                if e['ip'] in ips:
+                if e.get('ip').get('addr') in ips:
                     continue
-                ips.append(e['ip'])
+                ips.append(e.get('ip').get('addr'))
                 mail_content = prepare_mail(e)
                 send_mail(mail_content)
             print 'Done, waiting 3500s'
             time.sleep(3500)
         except Exception, e:
-            print 'Somethifng failed.'
+            print 'Something failed.'
             print e
             time.sleep(200)
