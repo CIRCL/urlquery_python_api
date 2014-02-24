@@ -1,36 +1,6 @@
 #!/usr/bin/python
 # -*- coding: utf-8 -*-
 
-"""
-API Overview
-============
-
-Most "urlquery" functions are usable without a key, but will only return data which
-are public (user submission). To access non-public or private reports a key is needed.
-For some of the data within the reports a key is also needed, like Javascript data and
-HTTP transactions.
-
-The "urlfeed" functions needs a key, and will not return URLs submitted by your own
-key. (All URLs submitted to urlQuery will be present in the feed).
-
-The API uses JSON requests and responses. A json string is built with the parameters
-and the function to call and POSTed over HTTP(S) to the API URL. The API should
-be available over both HTTP and HTTPS. The use of HTTPS is preferred.
-
-The functions to call is put in the “method” key within the JSON string, the rest of the
-parameters to the functions has their respective parameter name as key. The
-“method” key is required for all API calls.
-
-General Informations
-====================
-
-* if you have a API Key, put it in api_key.py with the variable name `key`
-* if you want to get the responses of the api gzip'ed, change `gzip_default`
-  to True in constraints.py
-
-"""
-
-
 try:
     import simplejson as json
 except:
@@ -40,285 +10,402 @@ import requests
 from dateutil.parser import parse
 from datetime import datetime, timedelta
 import time
+try:
+    from apikey import key
+except:
+    key = ''
 
-from . import constraints as c
-if c.has_private_key:
-    try:
-        from .api_key import key
-    except:
-        c.has_private_key = False
+base_url = 'https://uqapi.net/v3/json'
+gzip_default = False
 
-
+__feed_type = ['unfiltered', 'flagged']
 __intervals = ['hour', 'day']
-__query_types = ['string', 'regexp', 'urlquery_alert', 'ids_alert']
+__priorities = ['urlfeed', 'low', 'medium', 'high']
+__search_types = ['string', 'regexp', 'ids_alert', 'urlquery_alert', 'js_script_hash']
+__result_types = ['reports', 'url_list']
+__url_matchings = ['url_host', 'url_path']
 
-def __set_default_values(gzip = False):
+
+def __set_default_values(gzip=False):
     to_return = {}
-    if c.has_private_key:
-        to_return['key'] = key
-    if c.gzip_default or gzip:
-        to_return['gzip'] = 'true'
+    to_return['key'] = key
+    if gzip_default or gzip:
+        to_return['gzip'] = True
     return to_return
 
-def __query(query, gzip = False):
+def __query(query, gzip=False):
     if query.get('error') is not None:
         return query
     query.update(__set_default_values(gzip))
-    r = requests.post(c.base_url, data=json.dumps(query))
+    r = requests.post(base_url, data=json.dumps(query))
     return r.json()
 
-def urlfeed_get(interval = 'hour', timestamp = None, gzip = False):
+def urlfeed(feed='unfiltered', interval='hour', timestamp=None):
     """
-            Get the full feed on an time frame (hour or day).
+        The urlfeed function is used to access the main feed of URL from
+        the service. Currently there are two distinct feed:
+
+
+            :param feed: Currently there are two distinct feed:
+
+                * *unfiltered*: contains all URL received by the service, as
+                    with other API calls some restrictions to the feed might
+                    apply depending. (default)
+                * *flagged*: contains URLs flagged by some detection by
+                    urlquery, it will not contain data triggered by IDS
+                    alerts as that not possible to correlate correctly to a
+                    given URL. Access to this is currently restricted.
 
             :param interval: Sets the size of time window.
-
-                .. note::
-
-                    Allowed values:
-
-                        * hour - (recommended) splits the day into 24
-                                  slices Which each goes from 00-59 of
-                                  every hour, for example: 10:00-10:59.
-                        * day - will return all URLs from a given date.
+                    * *hour*: splits the day into 24 slices which each
+                        goes from 00-59 of every hour,
+                        for example: 10:00-10:59 (default)
+                    * *day*: will return all URLs from a given date
 
             :param timestamp: This selects which slice to return.
                               Any timestamp within a given interval/time
                               slice can be used to return URLs from that
                               timeframe. (default: now)
 
-                .. hint::
 
-                    "20120714 17:30" returns the feed between 17:00 and 17:59 the 2012-07-14
+            :return: URLFEED
+
+                {
+                    "start_time"    : string,
+                    "end_time"      : string,
+                    "feed"          : [URLs]    Array of URL objects (see README)
+                }
 
     """
-    query = {'method': 'urlfeed_get'}
-    if not c.has_private_key:
-        query.update({'error': 'Private key required.'})
+    query = {'method': 'urlfeed'}
+    if feed not in __feed_type:
+        query.update({'error': 'Feed can only be in ' + ', '.join(__feed_type)})
     if interval not in __intervals:
         query.update({'error': 'Interval can only be in ' + ', '.join(__intervals)})
     if timestamp is None:
         ts = datetime.now()
         if interval == 'hour':
             ts = ts - timedelta(hours=1)
+        if interval == 'day':
+            ts = ts - timedelta(days=1)
         timestamp = time.mktime(ts.utctimetuple())
     else:
         try:
             timestamp = time.mktime(parse(timestamp).utctimetuple())
         except:
             query.update({'error': 'Unable to convert time to timestamp: ' + str(time)})
-    query['timestamp'] = timestamp
+    query['feed'] = feed
     query['interval'] = interval
-    return __query(query, gzip)
+    query['timestamp'] = timestamp
+    return __query(query)
 
-def urlquery_search(q, urlquery_type = 'string', urlquery_from = None,
-        urlquery_to = None, gzip = False):
-    """
-        Searches for the 50 most recent reports on an IP.
-
-        :param q: Search string
-        :param type: Type of search
-
-            .. note::
-
-                Allowed values:
-
-                    * string - (recomended) Example: "91.229.143.59"
-                    * regex - Example:  "\.php\?.{1,7}=[a-f0-9]{16}$"
-                    * urlquery_alert
-                    * ids_alert
-
-                        .. warning::
-                            Please use moderation when searching with regexp.
-
-        :param urlquery_from: First date of the interval (default: last date - 30 days)
-        :param urlquery_to: Last date of the interval (default: now)
-    """
-    query = {'method': 'urlquery_search'}
-    if urlquery_type not in __query_types:
-        query.update({'error': 'urlquery_type can only be in ' + ', '.join(__query_types)})
-    if urlquery_to is None:
-        urlquery_to = datetime.now()
-    else:
-        if type(urlquery_to) == type(str()):
-            urlquery_to = parse(urlquery_to)
-    if urlquery_from is None:
-        urlquery_from = urlquery_to - timedelta(days=30)
-    else:
-        if type(urlquery_to) == type(str()):
-            urlquery_from = parse(urlquery_from)
-    query['type'] = urlquery_type
-    query['from'] = time.mktime(urlquery_from.utctimetuple())
-    query['to'] = time.mktime(urlquery_to.utctimetuple())
-    query['q'] = q
-    return __query(query, gzip)
-
-def urlquery_submit(url, ua = None, referer = None, flags = None, priority = 2):
+def submit(url, useragent=None, referer=None, priority='low',
+        access_level='public', callback_url=None, submit_vt=False,
+        save_only_alerted=False):
     """
         Submits an URL for analysis.
 
-        :param url: URL to submit for analysis.
-        :param ua: User-Agent to use. Only a few selected are approved.
+        :param url: URL to submit for analysis
 
-            .. note::
+        :param useragent: See user_agent_list API function. Setting an
+            invalid UserAgent will result in a random UserAgent getting
+            selected.
 
-                Some API keys have access to set custom User-Agent
-
-            .. note::
-
-                Allowed User-Agents:
-
-                    * (default) Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US; rv:1.9.2.13) Gecko/20101203 Firefox/3.6.13
-                    * Mozilla/5.0 (Windows; U; Windows NT 6.1; en-US) AppleWebKit/534.10 (KHTML, like Gecko) Chrome/8.0.552.237 Safari/534.1
-                    * Mozilla/5.0 (compatible; MSIE 8.0; Windows NT 6.0; SV1; .NET CLR 3.0.04506; .NET CLR 3.5.21022)
-                    * Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1; .NET CLR 1.1.4322)
-                    * Opera/9.80 (Windows NT 6.1; U; en) Presto/2.5.24 Version/10.54
-
-        :param referer: Referer to apply
-        :param flags: Type of report
-
-            .. note::
-
-                * 0 - Only accept if it’s a new URL
-                * 1 - Force submission, ignores if similar URLs exsists
-                * 2 - Non-public report
-                * 4 - Private report
-
-                .. tip::
-                    If both non-public and private bit is set, the report will be set to private.
+        :param referer: Referer to be applied to the first visiting URL
 
         :param priority: Set a priority on the submission.
+            * *urlfeed*: URL might take several hour before completing.
+                Used for big unfiltered feeds. Some filtering applies
+                before accepting to queue so a submitted URL might not
+                be tested.
+            * *low*: For vetted or filtered feeds (default)
+            * *medium*: Normal submissions
+            * *high*: To ensure highest priority.
 
-            .. note::
+        :param access_level: Set accessibility of the report
+            * *public*: URL is publicly available on the site (default)
+            * *nonpublic*: Shared with other security organizations/researchers.
+            * *private*: Only submitting key has access.
 
-                * 0 - urlfeed: URL might take several hour before completing
-                * 1 - Low: Used for mass submission through the API
-                * 2 - Normal
-                * 3 - High
+        :param callback_url: Results are POSTed back to the provided
+            URL when processing has completed. The results will be
+            originating from uqapi.net. Requires an API key.
+
+        :param submit_vt: Submits any unknown file toVirusTotal for
+            analysis. Information from VirusTotal will be included the
+            report as soon as they have finished processing the sample.
+            Most likely will the report from urlquery be available
+            before the data is received back from VirusTotal.
+            Default: false
+
+            Only executables, zip archives and pdf documents are
+            currently submitted.
+
+            .. note:: Not fully implemented yet.
+
+        :param save_only_alerted: Only reports which contains alerts
+            (IDS, UQ alerts, Blacklists etc.) are kept. The main purpose
+            for this flag is for mass testing URLs which has not been
+            properly vetted so only URLs of interest are kept.
+            Default: false
+
+            Combining this with a callback URL will result in only those
+            that has alerts on them beingPOSTed back to the callback URL.
+
+        :return: QUEUE_STATUS
+
+            {
+                "status"     : string,  ("queued", "processing", "done")
+                "queue_id"   : string,
+                "report_id"  : string,   Included once "status" = "done"
+                "priority"   : string,
+                "url"        : URL object,      See README
+                "settings"   : SETTINGS object  See README
+            }
 
 
     """
-    query = {'method': 'urlquery_submit'}
-    if flags > 7:
-        query.update({'error': 'flags must be <= 7'})
-    if priority not in list(range(4)):
-        query.update({'error': 'priority must be in '
-            + ', '.join(list(map(str, range(4))))})
+    query = {'method': 'submit'}
+    if priority not in __priorities:
+        query.update({'error': 'priority must be in '+', '.join(__priorities)})
+    if access_level not in __access_levels:
+        query.update({'error': 'assess_level must be in '+', '.join(__access_levels)})
     query['url'] = url
-    if ua is not None:
-        query['ua'] = ua
+    if useragent is not None:
+        query['useragent'] = useragent
     if referer is not None:
         query['referer'] = referer
-    if flags is not None:
-        query['flags'] = flags
     query['priority'] = priority
+    query['access_level'] = access_level
+    if callback_url is not None:
+        query['callback_url'] = callback_url
+    if submit_vt:
+        query['submit_vt'] = True
+    if save_only_alerted:
+        query['save_only_alerted'] = True
     return __query(query)
 
-def urlquery_get_queue_status(queue_id):
+def user_agent_list():
     """
-        Returns status (int) of the queued item along with other misc info.
-        The final report id of the report will be returned once the report
-        is finished (status = 3).
-        To get the report see ‘urlquery_get_report’
+        Returns a list of accepted user agent strings. These might
+        change over time, select one from the returned list.
 
-        :param queue_id: Queue ID returned from ‘urlquery_submit’
-
-        .. note::
-
-            The return status will be one of the following:
-
-                * 0 - Queued
-                * 1 - Processing
-                * 2 - Analyzing
-                * 3 - Done
-
+        :return: A list of accepted user agents
     """
-    query = {'method': 'urlquery_get_queue_status'}
+    query = {'method': 'user_agent_list'}
+    return __query(query)
+
+def mass_submit(urls, useragent=None, referer=None,
+        access_level='public', priority='low', callback_url=None):
+    """
+        See submit for details. All URLs will be queued with the same settings.
+
+        :return:
+
+            {
+                [QUEUE_STATUS]  Array of QUEUE_STATUS objects, See submit
+            }
+    """
+    query = {'method': 'mass_submit'}
+    if access_level not in __access_levels:
+        query.update({'error': 'assess_level must be in '+', '.join(__access_levels)})
+    if priority not in __priorities:
+        query.update({'error': 'priority must be in '+', '.join(__priorities)})
+    if useragent is not None:
+        query['useragent'] = useragent
+    if referer is not None:
+        query['referer'] = referer
+    query['access_level'] = access_level
+    query['priority'] = priority
+    if callback_url is not None:
+        query['callback_url'] = callback_url
+    return __query(query)
+
+def queue_status(queue_id):
+    """
+        Polls the current status of a queued URL. Normal processing time
+        for a URL is about 1 minute.
+
+        :param queue_id: QueueIDis returned by the submit API calls
+
+        :return: QUEUE_STATUS (See submit)
+    """
+    query = {'method': 'queue_status'}
     query['queue_id'] = queue_id
     return __query(query)
 
-def urlquery_get_report(urlquery_id, flag = 0 , recent_limit = 6, gzip = False):
+
+def report(report_id, recent_limit=0, include_details=False,
+        include_screenshot=False, include_domain_graph=False):
     """
-        Get an URL Report.
+        This extracts data for a given report, the amount of data and
+        what is included is dependent on the parameters set and the
+        permissions of the API key.
 
-        :param urlquery_id: ID of the report
-        :param flag: What data to include in the reports
+        :param report_id: ID of the report. To get a valid report_id
+            either use search to look for specificreports or report_list
+            to get a list of recently finished reports.
+            Can be string or an integer
 
-            .. note::
+        :param recent_limit: Number of recent reports to include.
+            Only applies when include_details is true.
+            Integer, default: 0
 
-                * (default) 0 - Basic report
-                * 1 - Include settings
-                * 2 - Alerts (IDS and urlQuery Alerts)
-                * 4 - Include recent report from same domain/IP/ASN.
-                * 8 - Include report details (JavaScripts, HTTP Transactions etc.)
+        :param include_details: Includes details in the report, like the
+            alert information, Javascript and transaction data.
+            Default: False
 
-                The above values are added together to form a final value.
-                To get all report data back use 15.
+        :param include_screenshot: A screenshot is included in the report
+            as a base64. The mime type of the image is also included.
+            Default: False
 
-        :param recent_limit: Number of reports from same ASN / IP /
-                             domain to include. Only basic info, regardless
-                             of flags. Default: 6.
+        :param include_domain_graph: A domain graph is included in the
+            report as a base64. The mime type of the image is also included.
+            Default: False
+
+
+        :return: BASICREPORT
+
+            {
+                "report_id": string,
+                "date"     : string,    Date formatted string
+                "url"      : URL,       URL object      - See README
+                "settings" : SETTINGS,  SETTINGS object - See README
+                "urlquery_alert_count"  : int,  Total UQ alerts
+                "ids_alert_count"       : int,  Total IDS alert
+                "blacklist_alert_count" : int,  Total Blacklist alerts
+                "screenshot"    : BINBLOB,      BINBLOB object - See README
+                "domain_graph"  : BINBLOB       BINBLOB object - See README
+            }
     """
-    query = {'method': 'urlquery_get_report'}
-    if flag > 15:
-        query.update({'error': 'flag must be <= 15'})
-    query['id'] = urlquery_id
-    query['flag'] = flag
-    query['recent_limit']= recent_limit
-    return __query(query, gzip)
+    query = {'method': 'report'}
+    query['report_id'] = report_id
+    if recent_limit is not None:
+        query['recent_limit'] = recent_limit
+    if include_details:
+        query['include_details'] = True
+    if include_screenshot:
+        query['include_screenshot'] = True
+    if include_domain_graph:
+        query['include_domain_graph'] = True
+    return __query(query)
 
-def urlquery_get_flagged_urls(interval = 'hour', timestamp = None,
-        confidence = 2, gzip = False):
+def report_list(timestamp=None, limit=50):
     """
-        Get the URL list with a reputation.
+    Returns a list of reports created from the given timestamp, if it’s
+    not included the most recent reports will be returned.
 
-        :param interval: Sets the size of time window.
+    Used to get a list of reports from given timestamp, along with basic
+    information about the report like number of alerts and the
+    submitted URL.
 
-            .. note::
+    To get reports which are nonpublic or private a API key is needed
+    which has access to these.
 
-                Allowed values:
+    :param timestamp: Unix Epoch timestamp from the starting point to get
+        reports.
+        Default: If None, setted to datetime.now()
 
-                    * hour - (recommended) splits the day into 24 slices
-                             Which each goes from 00-59 of every hour,
-                             for example: 10:00-10:59.
-                    * day - will return all URLs from a given date.
+    :param limit: Number of reports in the list
+        Default: 50
 
-        :param timestamp: This selects which slice to return.
-                          Any timestamp within a given interval/time
-                          slice can be used to return URLs from that
-                          timeframe. (default: now)
+    :return:
 
-            .. hint::
-                "20120714 17:30" returns the feed between 17:00 and 17:59 the 2012-07-14
+        {
+            "reports": [BASICREPORTS]   List of BASICREPORTS - See report
+        }
 
-        :param confidence: Return URLs based on confidence level. Each
-                           URL is given a confidence level between 1-3
-                           where 3 is the highest.
-
-            .. note::
-
-                * 1 - lowest, when IDS alerts triggers, return all URLs.
-                * 2 - when suspicious URL patterns or alerts are detected
-                * 3 - generally means a live exploit kit was detected
     """
-    query = {'method': 'urlquery_get_flagged_urls'}
-    if not c.has_private_key:
-        query.update({'error': 'Private key required.'})
-    if interval not in __intervals:
-        query.update({'error': 'interval can only be in ' + ', '.join(__intervals)})
-    if confidence not in [1,2,3]:
-        query.update({'error': 'confidence can only be in ' + ', '.join([1,2,3])})
+    query = {'method': 'report_list'}
     if timestamp is None:
         ts = datetime.now()
-        if interval == 'hour':
-            ts = ts - timedelta(hours=1)
         timestamp = time.mktime(ts.utctimetuple())
     else:
         try:
             timestamp = time.mktime(parse(timestamp).utctimetuple())
         except:
             query.update({'error': 'Unable to convert time to timestamp: ' + str(time)})
-    query['interval'] = interval
     query['timestamp'] = timestamp
-    query['confidence'] = confidence
-    return __query(query, gzip)
+    query['limit'] = limit
+    return __query(query)
+
+def search(q, search_type='string', result_type='reports',
+    url_matching='url_host', date_from=None, deep=False):
+    """
+        Search in the database
+
+        :param q: Search query
+
+        :param search_type: Search type
+            * *string*: Used to find URLs which contains a given string.
+                To search for URLs on a specific IP use string. If a
+                string is found to match an IP address it will automaticly
+                search based on the IP. (default)
+            * *regexp*: Search for a regexp pattern within URLs
+            * *ids_alert*: Search for specific IDS alerts
+            * *urlquery_alert*: ????? FIXME ?????
+            * *js_script_hash*: Used to search for URLs/reports which
+                contains a specific JavaScript. The scripts are searched
+                based on SHA256, the hash value for each script are
+                included in the report details. Can be used to find other
+
+        :param result_type: Result type
+            * *reports*: Full reports (default)
+            * *url_list*: List of urls
+
+        :param url_matching: What part of an URL to do pattern matching
+            against. Only applies to string and regexp searches.
+            * *url_host*: match against host (default)
+            * *url_path*: match against path
+
+
+        :param date_from: Unix epoch timestamp for starting searching point.
+            Default: If None, setted to datetime.now()
+
+
+        :param deep: Search all URLs, not just submitted URLs.
+            Default: false
+            Experimental! Should be used with care as it’s very resource
+            intensive.
+    """
+    query = {'method': 'search'}
+    if search_type not in __search_types:
+        query.update({'error': 'search_type can only be in ' + ', '.join(__search_types)})
+    if result_type not in __result_types:
+        query.update({'error': 'result_type can only be in ' + ', '.join(__result_types)})
+    if url_matching not in __url_matchings:
+        query.update({'error': 'url_matching can only be in ' + ', '.join(__url_matchings)})
+
+    if date_from is None:
+        ts = datetime.now()
+        timestamp = time.mktime(ts.utctimetuple())
+    else:
+        try:
+            timestamp = time.mktime(parse(date_from).utctimetuple())
+        except:
+            query.update({'error': 'Unable to convert time to timestamp: ' + str(time)})
+
+    query['q'] = q
+    query['search_type'] = search_type
+    query['result_type'] = result_type
+    query['url_matching'] = url_matching
+    query['from'] = timestamp
+    if deep:
+        query['deep'] = True
+    return __query(query)
+
+def reputation(q):
+    """
+        Searches a reputation list of URLs detected over the last month.
+        The search query can be a domain or an IP.
+
+        With an API key, matching URLs will be returned along with the
+        triggering alert.
+
+        :param q: Search query
+    """
+
+    query = {'method': 'reputation'}
+    query['q'] = q
+    return __query(query)
+
