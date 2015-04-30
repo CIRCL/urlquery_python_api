@@ -11,7 +11,7 @@ from dateutil.parser import parse
 from datetime import datetime, timedelta
 import time
 try:
-    from api_key import key
+    from .api_key import key
 except:
     key = ''
 
